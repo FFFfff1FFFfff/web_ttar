@@ -7,7 +7,6 @@ import {
 const TATTOO_OPACITY = 0.75;
 const MIN_FOREARM_PX = 20;
 const VISIBILITY_THRESH = 0.5;
-const AVG_FOREARM_CM = 25; // average elbow-to-wrist distance in cm
 // One Euro Filter params
 const OEF_MIN_CUTOFF = 0.8; // lower = smoother when still
 const OEF_BETA = 0.5;       // higher = less lag when moving
@@ -51,10 +50,11 @@ function createOneEuroFilter(minCutoff = OEF_MIN_CUTOFF, beta = OEF_BETA) {
   };
 }
 
-// Per-forearm smoothed geometry: cx, cy, angle, scale (perspective factor)
+// Per-forearm smoothed geometry + shared torso scale
 const filters = {
-  left: { cx: createOneEuroFilter(), cy: createOneEuroFilter(), angle: createOneEuroFilter(), scale: createOneEuroFilter() },
-  right: { cx: createOneEuroFilter(), cy: createOneEuroFilter(), angle: createOneEuroFilter(), scale: createOneEuroFilter() },
+  left: { cx: createOneEuroFilter(), cy: createOneEuroFilter(), angle: createOneEuroFilter() },
+  right: { cx: createOneEuroFilter(), cy: createOneEuroFilter(), angle: createOneEuroFilter() },
+  pxPerM: createOneEuroFilter(), // shared, torso-based
 };
 
 // --- Load tattoo image ---
@@ -108,35 +108,22 @@ async function initCamera() {
 }
 
 // --- Draw tattoo on one forearm ---
-function drawTattoo(lm2d, wl3d, f, t) {
-  const elbow2d = lm2d[0], wrist2d = lm2d[1];
-  const elbow3d = wl3d[0], wrist3d = wl3d[1];
+function drawTattoo(elbow2d, wrist2d, f, t, pxPerM) {
   if (elbow2d.visibility < VISIBILITY_THRESH || wrist2d.visibility < VISIBILITY_THRESH) return;
 
-  // 2D screen positions
   const ex = elbow2d.x * canvas.width, ey = elbow2d.y * canvas.height;
   const wx = wrist2d.x * canvas.width, wy = wrist2d.y * canvas.height;
-  const len2d = Math.hypot(wx - ex, wy - ey);
-  if (len2d < MIN_FOREARM_PX) return;
-
-  // 3D real forearm length (meters) — stable regardless of rotation
-  const len3d = Math.hypot(wrist3d.x - elbow3d.x, wrist3d.y - elbow3d.y, wrist3d.z - elbow3d.z);
-  // px per real meter: how many pixels correspond to 1 real-world meter
-  const pxPerM = len2d / Math.max(len3d, 0.01);
-  // Perspective factor: how much the forearm is foreshortened (0→pointing at camera, 1→perpendicular)
-  const perspFactor = Math.min(len2d / Math.max(pxPerM * len3d, 1), 1);
+  if (Math.hypot(wx - ex, wy - ey) < MIN_FOREARM_PX) return;
 
   const rawAngle = Math.atan2(wy - ey, wx - ex);
   const rawCx = (ex + wx) / 2, rawCy = (ey + wy) / 2;
 
-  // Smooth geometry
   const cx = f.cx.filter(rawCx, t);
   const cy = f.cy.filter(rawCy, t);
   const angle = f.angle.filter(rawAngle, t);
-  const scale = f.scale.filter(pxPerM, t);
 
-  // Convert cm to pixels using stable 3D-based scale
-  const tattooW = (tattooWidthCm / 100) * scale;
+  // Convert cm to pixels using torso-based pxPerM (not forearm)
+  const tattooW = (tattooWidthCm / 100) * pxPerM;
   const tattooH = tattooW * (tattooImg.height / tattooImg.width);
 
   ctx.save();
@@ -166,9 +153,20 @@ function renderLoop() {
       const lm = results.landmarks[0];
       const wl = results.worldLandmarks[0];
       const t = now / 1000;
-      // Pass [elbow, wrist] pairs for both 2D and 3D
-      drawTattoo([lm[13], lm[15]], [wl[13], wl[15]], filters.left, t);
-      drawTattoo([lm[14], lm[16]], [wl[14], wl[16]], filters.right, t);
+
+      // Use torso (right shoulder→right hip) for pxPerM: always faces camera
+      // 2D: landmarks 12 (R shoulder) → 24 (R hip)
+      // 3D: worldLandmarks same indices
+      const torso2d = Math.hypot(
+        (lm[12].x - lm[24].x) * canvas.width,
+        (lm[12].y - lm[24].y) * canvas.height
+      );
+      const torso3d = Math.hypot(wl[12].x - wl[24].x, wl[12].y - wl[24].y, wl[12].z - wl[24].z);
+      const rawPxPerM = torso2d / Math.max(torso3d, 0.01);
+      const pxPerM = filters.pxPerM.filter(rawPxPerM, t);
+
+      drawTattoo(lm[13], lm[15], filters.left, t, pxPerM);
+      drawTattoo(lm[14], lm[16], filters.right, t, pxPerM);
     }
   }
 
