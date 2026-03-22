@@ -7,6 +7,7 @@ import {
 const TATTOO_OPACITY = 0.75;
 const MIN_FOREARM_PX = 20;
 const VISIBILITY_THRESH = 0.5;
+const AVG_FOREARM_CM = 25; // average elbow-to-wrist distance in cm
 // One Euro Filter params
 const OEF_MIN_CUTOFF = 0.8; // lower = smoother when still
 const OEF_BETA = 0.5;       // higher = less lag when moving
@@ -20,6 +21,7 @@ const statusEl = document.getElementById("status");
 // --- State ---
 let poseLandmarker = null;
 let tattooImg = null;
+let tattooWidthCm = 8; // default tattoo width in cm
 
 // --- One Euro Filter ---
 // Attempt to use a widely-known low-latency smoothing filter
@@ -123,7 +125,9 @@ function drawTattoo(elbow, wrist, f, t) {
   const angle = f.angle.filter(rawAngle, t);
   const len = f.len.filter(rawLen, t);
 
-  const tattooW = len * 0.7;
+  // Convert cm to pixels using forearm as reference (forearm ≈ 25cm)
+  const pxPerCm = len / AVG_FOREARM_CM;
+  const tattooW = tattooWidthCm * pxPerCm;
   const tattooH = tattooW * (tattooImg.height / tattooImg.width);
 
   ctx.save();
@@ -159,6 +163,20 @@ function renderLoop() {
 
   requestAnimationFrame(renderLoop);
 }
+
+// --- UI handlers ---
+document.getElementById("file-input").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => { tattooImg = img; };
+  img.src = URL.createObjectURL(file);
+});
+
+document.getElementById("size-input").addEventListener("input", (e) => {
+  const v = parseFloat(e.target.value);
+  if (v > 0) tattooWidthCm = v;
+});
 
 // --- Start ---
 async function main() {
