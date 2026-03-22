@@ -51,10 +51,10 @@ function createOneEuroFilter(minCutoff = OEF_MIN_CUTOFF, beta = OEF_BETA) {
   };
 }
 
-// Per-forearm smoothed geometry: cx, cy, angle, length
+// Per-forearm smoothed geometry: cx, cy, angle, scale (perspective factor)
 const filters = {
-  left: { cx: createOneEuroFilter(), cy: createOneEuroFilter(), angle: createOneEuroFilter(), len: createOneEuroFilter() },
-  right: { cx: createOneEuroFilter(), cy: createOneEuroFilter(), angle: createOneEuroFilter(), len: createOneEuroFilter() },
+  left: { cx: createOneEuroFilter(), cy: createOneEuroFilter(), angle: createOneEuroFilter(), scale: createOneEuroFilter() },
+  right: { cx: createOneEuroFilter(), cy: createOneEuroFilter(), angle: createOneEuroFilter(), scale: createOneEuroFilter() },
 };
 
 // --- Load tattoo image ---
@@ -108,26 +108,35 @@ async function initCamera() {
 }
 
 // --- Draw tattoo on one forearm ---
-function drawTattoo(elbow, wrist, f, t) {
-  if (elbow.visibility < VISIBILITY_THRESH || wrist.visibility < VISIBILITY_THRESH) return;
+function drawTattoo(lm2d, wl3d, f, t) {
+  const elbow2d = lm2d[0], wrist2d = lm2d[1];
+  const elbow3d = wl3d[0], wrist3d = wl3d[1];
+  if (elbow2d.visibility < VISIBILITY_THRESH || wrist2d.visibility < VISIBILITY_THRESH) return;
 
-  const ex = elbow.x * canvas.width, ey = elbow.y * canvas.height;
-  const wx = wrist.x * canvas.width, wy = wrist.y * canvas.height;
-  const rawLen = Math.hypot(wx - ex, wy - ey);
-  if (rawLen < MIN_FOREARM_PX) return;
+  // 2D screen positions
+  const ex = elbow2d.x * canvas.width, ey = elbow2d.y * canvas.height;
+  const wx = wrist2d.x * canvas.width, wy = wrist2d.y * canvas.height;
+  const len2d = Math.hypot(wx - ex, wy - ey);
+  if (len2d < MIN_FOREARM_PX) return;
+
+  // 3D real forearm length (meters) — stable regardless of rotation
+  const len3d = Math.hypot(wrist3d.x - elbow3d.x, wrist3d.y - elbow3d.y, wrist3d.z - elbow3d.z);
+  // px per real meter: how many pixels correspond to 1 real-world meter
+  const pxPerM = len2d / Math.max(len3d, 0.01);
+  // Perspective factor: how much the forearm is foreshortened (0→pointing at camera, 1→perpendicular)
+  const perspFactor = Math.min(len2d / Math.max(pxPerM * len3d, 1), 1);
 
   const rawAngle = Math.atan2(wy - ey, wx - ex);
   const rawCx = (ex + wx) / 2, rawCy = (ey + wy) / 2;
 
-  // Smooth the computed geometry, not the raw landmarks
+  // Smooth geometry
   const cx = f.cx.filter(rawCx, t);
   const cy = f.cy.filter(rawCy, t);
   const angle = f.angle.filter(rawAngle, t);
-  const len = f.len.filter(rawLen, t);
+  const scale = f.scale.filter(pxPerM, t);
 
-  // Convert cm to pixels using forearm as reference (forearm ≈ 25cm)
-  const pxPerCm = len / AVG_FOREARM_CM;
-  const tattooW = tattooWidthCm * pxPerCm;
+  // Convert cm to pixels using stable 3D-based scale
+  const tattooW = (tattooWidthCm / 100) * scale;
   const tattooH = tattooW * (tattooImg.height / tattooImg.width);
 
   ctx.save();
@@ -153,11 +162,13 @@ function renderLoop() {
     const results = poseLandmarker.detectForVideo(video, now);
     lastTime = now;
 
-    if (results.landmarks && results.landmarks.length > 0) {
+    if (results.landmarks && results.landmarks.length > 0 && results.worldLandmarks && results.worldLandmarks.length > 0) {
       const lm = results.landmarks[0];
-      const t = now / 1000; // seconds for One Euro Filter
-      drawTattoo(lm[13], lm[15], filters.left, t);
-      drawTattoo(lm[14], lm[16], filters.right, t);
+      const wl = results.worldLandmarks[0];
+      const t = now / 1000;
+      // Pass [elbow, wrist] pairs for both 2D and 3D
+      drawTattoo([lm[13], lm[15]], [wl[13], wl[15]], filters.left, t);
+      drawTattoo([lm[14], lm[16]], [wl[14], wl[16]], filters.right, t);
     }
   }
 
