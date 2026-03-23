@@ -8,8 +8,12 @@ const TATTOO_OPACITY = 0.75;
 const MIN_FOREARM_PX = 20;
 const VISIBILITY_THRESH = 0.5;
 // One Euro Filter params
-const OEF_MIN_CUTOFF = 0.3; // lower = smoother when still
-const OEF_BETA = 0.2;       // higher = less lag when moving
+const OEF_MIN_CUTOFF = 0.05; // lower = smoother when still
+const OEF_BETA = 0.05;       // higher = less lag when moving
+const OEF_SCALE_CUTOFF = 0.01; // extra-heavy smoothing for pxPerM
+const OEF_SCALE_BETA = 0.01;
+// Outlier gating: max px jump per second before rejecting a frame
+const OUTLIER_MAX_SPEED = 3000; // px/s
 
 // --- Embed mode ---
 const EMBED = new URLSearchParams(location.search).has("embed");
@@ -62,12 +66,28 @@ function createOneEuroFilter(minCutoff = OEF_MIN_CUTOFF, beta = OEF_BETA) {
   };
 }
 
-// Per-forearm smoothed geometry + shared torso scale
+// Per-arm smoothed geometry + shared torso scale
 const filters = {
-  left: { cx: createOneEuroFilter(), cy: createOneEuroFilter(), angle: createOneEuroFilter() },
-  right: { cx: createOneEuroFilter(), cy: createOneEuroFilter(), angle: createOneEuroFilter() },
-  pxPerM: createOneEuroFilter(), // shared, torso-based
+  left: {
+    cx: createOneEuroFilter(), cy: createOneEuroFilter(),
+    sinA: createOneEuroFilter(), cosA: createOneEuroFilter(),
+    prevCx: null, prevCy: null, prevT: null,
+  },
+  right: {
+    cx: createOneEuroFilter(), cy: createOneEuroFilter(),
+    sinA: createOneEuroFilter(), cosA: createOneEuroFilter(),
+    prevCx: null, prevCy: null, prevT: null,
+  },
+  pxPerM: createOneEuroFilter(OEF_SCALE_CUTOFF, OEF_SCALE_BETA),
 };
+
+function resetArmFilters() {
+  for (const side of [filters.left, filters.right]) {
+    side.cx.reset(); side.cy.reset();
+    side.sinA.reset(); side.cosA.reset();
+    side.prevCx = null; side.prevCy = null; side.prevT = null;
+  }
+}
 
 // --- Load tattoo image ---
 function loadTattooImage() {
@@ -119,22 +139,35 @@ async function initCamera() {
   canvas.height = video.videoHeight;
 }
 
-// --- Draw tattoo on one forearm ---
-function drawTattoo(elbow2d, wrist2d, f, t, pxPerM) {
-  if (elbow2d.visibility < VISIBILITY_THRESH || wrist2d.visibility < VISIBILITY_THRESH) return;
+// --- Draw tattoo on one arm ---
+function drawTattoo(ptA, ptB, f, t, pxPerM) {
+  if (ptA.visibility < VISIBILITY_THRESH || ptB.visibility < VISIBILITY_THRESH) return;
 
-  const ex = elbow2d.x * canvas.width, ey = elbow2d.y * canvas.height;
-  const wx = wrist2d.x * canvas.width, wy = wrist2d.y * canvas.height;
-  if (Math.hypot(wx - ex, wy - ey) < MIN_FOREARM_PX) return;
+  const ax = ptA.x * canvas.width, ay = ptA.y * canvas.height;
+  const bx = ptB.x * canvas.width, by = ptB.y * canvas.height;
+  if (Math.hypot(bx - ax, by - ay) < MIN_FOREARM_PX) return;
 
-  const rawAngle = Math.atan2(wy - ey, wx - ex);
-  const rawCx = ex + (wx - ex) * placement, rawCy = ey + (wy - ey) * placement;
+  const rawCx = ax + (bx - ax) * placement;
+  const rawCy = ay + (by - ay) * placement;
+
+  // P2: Outlier gating — reject single-frame jumps
+  if (f.prevCx !== null) {
+    const dt = Math.max(t - f.prevT, 1e-6);
+    const speed = Math.hypot(rawCx - f.prevCx, rawCy - f.prevCy) / dt;
+    if (speed > OUTLIER_MAX_SPEED) return; // skip this frame
+  }
+  f.prevCx = rawCx; f.prevCy = rawCy; f.prevT = t;
 
   const cx = f.cx.filter(rawCx, t);
   const cy = f.cy.filter(rawCy, t);
-  const angle = f.angle.filter(rawAngle, t);
 
-  // Convert cm to pixels using torso-based pxPerM (not forearm)
+  // P0: Filter angle via sin/cos to avoid ±π discontinuity
+  const rawAngle = Math.atan2(by - ay, bx - ax);
+  const angle = Math.atan2(
+    f.sinA.filter(Math.sin(rawAngle), t),
+    f.cosA.filter(Math.cos(rawAngle), t)
+  );
+
   const tattooW = (tattooWidthCm / 100) * pxPerM;
   const tattooH = tattooW * (tattooImg.height / tattooImg.width);
 
@@ -203,8 +236,7 @@ document.getElementById("size-input").addEventListener("input", (e) => {
 document.getElementById("part-select").addEventListener("change", (e) => {
   bodyPart = e.target.value;
   // Reset filters when switching body part
-  Object.values(filters.left).forEach(f => f.reset());
-  Object.values(filters.right).forEach(f => f.reset());
+  resetArmFilters();
 });
 
 document.getElementById("placement-input").addEventListener("input", (e) => {
@@ -224,8 +256,7 @@ if (EMBED) {
       if (d.cm > 0) tattooWidthCm = d.cm;
     } else if (d.type === "setBodyPart" && BODY_PARTS[d.part]) {
       bodyPart = d.part;
-      Object.values(filters.left).forEach(f => f.reset());
-      Object.values(filters.right).forEach(f => f.reset());
+      resetArmFilters();
     } else if (d.type === "setPlacement") {
       placement = parseFloat(d.value);
     }
