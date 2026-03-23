@@ -21,6 +21,14 @@ const statusEl = document.getElementById("status");
 let poseLandmarker = null;
 let tattooImg = null;
 let tattooWidthCm = 8; // default tattoo width in cm
+let bodyPart = "forearm"; // "forearm" or "upperarm"
+let placement = 0.5; // 0–1 along the segment (A→B)
+
+// Landmark indices: [pointA, pointB] for left and right
+const BODY_PARTS = {
+  forearm:  { left: [13, 15], right: [14, 16] }, // elbow→wrist
+  upperarm: { left: [11, 13], right: [12, 14] }, // shoulder→elbow
+};
 
 // --- One Euro Filter ---
 // Attempt to use a widely-known low-latency smoothing filter
@@ -116,7 +124,7 @@ function drawTattoo(elbow2d, wrist2d, f, t, pxPerM) {
   if (Math.hypot(wx - ex, wy - ey) < MIN_FOREARM_PX) return;
 
   const rawAngle = Math.atan2(wy - ey, wx - ex);
-  const rawCx = (ex + wx) / 2, rawCy = (ey + wy) / 2;
+  const rawCx = ex + (wx - ex) * placement, rawCy = ey + (wy - ey) * placement;
 
   const cx = f.cx.filter(rawCx, t);
   const cy = f.cy.filter(rawCy, t);
@@ -165,8 +173,9 @@ function renderLoop() {
       const rawPxPerM = torso2d / Math.max(torso3d, 0.01);
       const pxPerM = filters.pxPerM.filter(rawPxPerM, t);
 
-      drawTattoo(lm[13], lm[15], filters.left, t, pxPerM);
-      drawTattoo(lm[14], lm[16], filters.right, t, pxPerM);
+      const bp = BODY_PARTS[bodyPart];
+      drawTattoo(lm[bp.left[0]], lm[bp.left[1]], filters.left, t, pxPerM);
+      drawTattoo(lm[bp.right[0]], lm[bp.right[1]], filters.right, t, pxPerM);
     }
   }
 
@@ -185,6 +194,17 @@ document.getElementById("file-input").addEventListener("change", (e) => {
 document.getElementById("size-input").addEventListener("input", (e) => {
   const v = parseFloat(e.target.value);
   if (v > 0) tattooWidthCm = v;
+});
+
+document.getElementById("part-select").addEventListener("change", (e) => {
+  bodyPart = e.target.value;
+  // Reset filters when switching body part
+  Object.values(filters.left).forEach(f => f.reset());
+  Object.values(filters.right).forEach(f => f.reset());
+});
+
+document.getElementById("placement-input").addEventListener("input", (e) => {
+  placement = parseFloat(e.target.value);
 });
 
 // --- Start ---
