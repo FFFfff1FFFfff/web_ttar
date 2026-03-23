@@ -8,12 +8,16 @@ const TATTOO_OPACITY = 0.75;
 const MIN_FOREARM_PX = 20;
 const VISIBILITY_THRESH = 0.5;
 // One Euro Filter params
-const OEF_MIN_CUTOFF = 0.05; // lower = smoother when still
-const OEF_BETA = 0.05;       // higher = less lag when moving
-const OEF_SCALE_CUTOFF = 0.01; // extra-heavy smoothing for pxPerM
-const OEF_SCALE_BETA = 0.01;
+const OEF_MIN_CUTOFF = 0.008; // lower = smoother when still
+const OEF_BETA = 0.005;       // higher = less lag when moving
+const OEF_ANGLE_CUTOFF = 0.003; // extra-smooth angle filtering
+const OEF_ANGLE_BETA = 0.003;
+const OEF_SCALE_CUTOFF = 0.005; // extra-heavy smoothing for pxPerM
+const OEF_SCALE_BETA = 0.005;
 // Outlier gating: max px jump per second before rejecting a frame
-const OUTLIER_MAX_SPEED = 3000; // px/s
+const OUTLIER_MAX_SPEED = 800; // px/s
+// Dead zone: ignore movements smaller than this (pixels)
+const DEAD_ZONE_PX = 2.5;
 
 // --- Embed mode ---
 const EMBED = new URLSearchParams(location.search).has("embed");
@@ -70,13 +74,17 @@ function createOneEuroFilter(minCutoff = OEF_MIN_CUTOFF, beta = OEF_BETA) {
 const filters = {
   left: {
     cx: createOneEuroFilter(), cy: createOneEuroFilter(),
-    sinA: createOneEuroFilter(), cosA: createOneEuroFilter(),
+    sinA: createOneEuroFilter(OEF_ANGLE_CUTOFF, OEF_ANGLE_BETA),
+    cosA: createOneEuroFilter(OEF_ANGLE_CUTOFF, OEF_ANGLE_BETA),
     prevCx: null, prevCy: null, prevT: null,
+    lockedCx: null, lockedCy: null,
   },
   right: {
     cx: createOneEuroFilter(), cy: createOneEuroFilter(),
-    sinA: createOneEuroFilter(), cosA: createOneEuroFilter(),
+    sinA: createOneEuroFilter(OEF_ANGLE_CUTOFF, OEF_ANGLE_BETA),
+    cosA: createOneEuroFilter(OEF_ANGLE_CUTOFF, OEF_ANGLE_BETA),
     prevCx: null, prevCy: null, prevT: null,
+    lockedCx: null, lockedCy: null,
   },
   pxPerM: createOneEuroFilter(OEF_SCALE_CUTOFF, OEF_SCALE_BETA),
 };
@@ -86,6 +94,7 @@ function resetArmFilters() {
     side.cx.reset(); side.cy.reset();
     side.sinA.reset(); side.cosA.reset();
     side.prevCx = null; side.prevCy = null; side.prevT = null;
+    side.lockedCx = null; side.lockedCy = null;
   }
 }
 
@@ -158,8 +167,15 @@ function drawTattoo(ptA, ptB, f, t, pxPerM) {
   }
   f.prevCx = rawCx; f.prevCy = rawCy; f.prevT = t;
 
-  const cx = f.cx.filter(rawCx, t);
-  const cy = f.cy.filter(rawCy, t);
+  let cx = f.cx.filter(rawCx, t);
+  let cy = f.cy.filter(rawCy, t);
+
+  // Dead zone: lock position when movement is tiny
+  if (f.lockedCx !== null && Math.hypot(cx - f.lockedCx, cy - f.lockedCy) < DEAD_ZONE_PX) {
+    cx = f.lockedCx; cy = f.lockedCy;
+  } else {
+    f.lockedCx = cx; f.lockedCy = cy;
+  }
 
   // P0: Filter angle via sin/cos to avoid ±π discontinuity
   const rawAngle = Math.atan2(by - ay, bx - ax);
