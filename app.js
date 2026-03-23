@@ -8,8 +8,8 @@ const TATTOO_OPACITY = 0.75;
 const MIN_FOREARM_PX = 20;
 const VISIBILITY_THRESH = 0.5;
 // One Euro Filter params
-const OEF_MIN_CUTOFF = 0.8; // lower = smoother when still
-const OEF_BETA = 0.5;       // higher = less lag when moving
+const OEF_MIN_CUTOFF = 0.3; // lower = smoother when still
+const OEF_BETA = 0.2;       // higher = less lag when moving
 
 // --- DOM ---
 const video = document.getElementById("video");
