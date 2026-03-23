@@ -29,6 +29,41 @@ Then open the URL in a browser with webcam access (Chrome/Edge recommended for b
 5. Switch between **Forearm** / **Upper Arm**
 6. Drag the **Position** slider to move the tattoo along the limb
 
+## Embed Mode
+
+Add `?embed` to the URL to use as an iframe. The built-in UI is hidden; control everything via `postMessage`.
+
+```html
+<iframe src="https://your-domain.com/?embed" allow="camera" />
+```
+
+### Parent → iframe
+
+```js
+const frame = document.querySelector("iframe");
+
+// Set tattoo image (data URL)
+frame.contentWindow.postMessage({ type: "setTattoo", dataUrl: "data:image/png;..." }, "*");
+
+// Set width in cm
+frame.contentWindow.postMessage({ type: "setSize", cm: 10 }, "*");
+
+// Set body part: "forearm" | "upperarm"
+frame.contentWindow.postMessage({ type: "setBodyPart", part: "forearm" }, "*");
+
+// Set position along limb (0–1)
+frame.contentWindow.postMessage({ type: "setPlacement", value: 0.5 }, "*");
+```
+
+### iframe → Parent
+
+```js
+window.addEventListener("message", (e) => {
+  if (e.data.type === "ready") { /* AR is running */ }
+  if (e.data.type === "error") { /* e.data.message */ }
+});
+```
+
 ## Tech Stack
 
 - MediaPipe Pose Landmarker (vision tasks WASM/GPU)

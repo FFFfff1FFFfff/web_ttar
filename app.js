@@ -11,6 +11,10 @@ const VISIBILITY_THRESH = 0.5;
 const OEF_MIN_CUTOFF = 0.3; // lower = smoother when still
 const OEF_BETA = 0.2;       // higher = less lag when moving
 
+// --- Embed mode ---
+const EMBED = new URLSearchParams(location.search).has("embed");
+if (EMBED) document.body.classList.add("embed");
+
 // --- DOM ---
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
@@ -207,6 +211,27 @@ document.getElementById("placement-input").addEventListener("input", (e) => {
   placement = parseFloat(e.target.value);
 });
 
+// --- postMessage API (embed mode) ---
+if (EMBED) {
+  window.addEventListener("message", (e) => {
+    const d = e.data;
+    if (!d || !d.type) return;
+    if (d.type === "setTattoo") {
+      const img = new Image();
+      img.onload = () => { tattooImg = img; };
+      img.src = d.dataUrl;
+    } else if (d.type === "setSize") {
+      if (d.cm > 0) tattooWidthCm = d.cm;
+    } else if (d.type === "setBodyPart" && BODY_PARTS[d.part]) {
+      bodyPart = d.part;
+      Object.values(filters.left).forEach(f => f.reset());
+      Object.values(filters.right).forEach(f => f.reset());
+    } else if (d.type === "setPlacement") {
+      placement = parseFloat(d.value);
+    }
+  });
+}
+
 // --- Start ---
 async function main() {
   try {
@@ -218,9 +243,11 @@ async function main() {
     await initPose();
     statusEl.textContent = "Ready";
     setTimeout(() => (statusEl.style.opacity = "0"), 1500);
+    if (EMBED) window.parent.postMessage({ type: "ready" }, "*");
     renderLoop();
   } catch (err) {
     statusEl.textContent = "Error: " + err.message;
+    if (EMBED) window.parent.postMessage({ type: "error", message: err.message }, "*");
     console.error(err);
   }
 }

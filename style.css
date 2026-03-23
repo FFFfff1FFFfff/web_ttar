@@ -97,3 +97,7 @@ body {
 #size-row {
   white-space: nowrap;
 }
+
+/* Embed mode: hide UI, camera only */
+body.embed #panel,
+body.embed #status { display: none; }
