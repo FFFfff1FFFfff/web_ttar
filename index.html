@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,21 +10,21 @@
   <div id="container">
     <video id="video" playsinline autoplay muted></video>
     <canvas id="canvas"></canvas>
-    <div id="status">正在加载模型...</div>
+    <div id="status">Loading model...</div>
     <div id="panel">
       <label id="upload-btn">
-        上传图案
+        Upload Design
         <input type="file" id="file-input" accept="image/*" hidden>
       </label>
       <div id="size-row">
-        <label>宽 <input type="number" id="size-input" value="8" min="1" max="30" step="0.5"> cm</label>
+        <label>Width <input type="number" id="size-input" value="8" min="1" max="30" step="0.5"> cm</label>
       </div>
       <div id="part-row">
         <select id="part-select">
-          <option value="forearm" selected>小臂</option>
-          <option value="upperarm">大臂</option>
+          <option value="forearm" selected>Forearm</option>
+          <option value="upperarm">Upper Arm</option>
         </select>
-        <label>位置 <input type="range" id="placement-input" min="0" max="1" step="0.05" value="0.5"></label>
+        <label>Position <input type="range" id="placement-input" min="0" max="1" step="0.05" value="0.5"></label>
       </div>
     </div>
   </div>

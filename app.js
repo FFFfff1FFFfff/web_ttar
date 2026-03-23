@@ -210,17 +210,17 @@ document.getElementById("placement-input").addEventListener("input", (e) => {
 // --- Start ---
 async function main() {
   try {
-    statusEl.textContent = "正在加载纹身图案...";
+    statusEl.textContent = "Loading tattoo...";
     tattooImg = await loadTattooImage();
-    statusEl.textContent = "正在初始化摄像头...";
+    statusEl.textContent = "Starting camera...";
     await initCamera();
-    statusEl.textContent = "正在加载 AI 模型...";
+    statusEl.textContent = "Loading AI model...";
     await initPose();
-    statusEl.textContent = "就绪 ✓";
+    statusEl.textContent = "Ready";
     setTimeout(() => (statusEl.style.opacity = "0"), 1500);
     renderLoop();
   } catch (err) {
-    statusEl.textContent = "错误: " + err.message;
+    statusEl.textContent = "Error: " + err.message;
     console.error(err);
   }
 }
