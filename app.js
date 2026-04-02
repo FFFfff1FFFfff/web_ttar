@@ -268,6 +268,8 @@ if (EMBED) {
       const img = new Image();
       img.onload = () => { tattooImg = img; };
       img.src = d.dataUrl;
+      if (d.widthInch > 0) tattooWidthCm = d.widthInch * 2.54;
+      else if (d.widthCm > 0) tattooWidthCm = d.widthCm;
     } else if (d.type === "setSize") {
       if (d.cm > 0) tattooWidthCm = d.cm;
     } else if (d.type === "setBodyPart" && BODY_PARTS[d.part]) {
